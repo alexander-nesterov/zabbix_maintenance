@@ -65,12 +65,10 @@ sub send_to_zabbix
     my $json = encode_json($data_ref);
     my $ua = create_ua();
 
-    my $response = $ua->post(
-	                     'http://' . ZABBIX_SERVER . '/api_jsonrpc.php',
+    my $response = $ua->post('http://' . ZABBIX_SERVER . '/api_jsonrpc.php',
     			     'Content_Type' => 'application/json',
     			     'Content' => $json,
     			     'Accept' => 'application/json');
-
     if ($response->is_success)
     {
     	my $content_decoded = decode_json($response->content);
@@ -101,15 +99,35 @@ sub get_name_by_id
     $data{'auth'} = $ZABBIX_AUTH_ID;
     $data{'id'} = 1;
 
+    my @hosts;
     my $response = send_to_zabbix(\%data);
+    foreach my $id (@{$response->{'result'}})
+    {
+    	push(@hosts, int($id->{'hostid'}));
+    }
+    return @hosts;
 }
 
 #================================================================
 sub create_maintenance
 {
-    my ($name, $since, $till, $description, $maintenance_type, @hosts_names) = @_;
+    my ($name,             #Название обслуживания
+    	$since,            #Активно с
+    	$till,             #Активно до
+    	$description,      #Описание
+    	$maintenance_type, #Тип обслуживания
+    	@hosts_names,      #Список узлов сети в обслуживании
+    ) = @_;
 
+    #Получаем список узлов
     my @hosts_id = get_name_by_id(\@hosts_names);
+
+    if (scalar @hosts_id == 0)
+    {
+    	do_print('Array of hosts is empty', 'INFO');
+    	return;
+    }
+
     my %data;
     $data{'jsonrpc'} = '2.0';
     $data{'method'} = 'maintenance.create';
@@ -118,8 +136,7 @@ sub create_maintenance
     $data{'params'}{'active_till'} = $till;
     $data{'params'}{'description'} = $description;
     $data{'params'}{'maintenance_type'} = $maintenance_type; #0 - (по умолчанию) со сбором данных; 1 - без сбора данных.
-    #$data{'params'}{'hostids '} = [@hosts_id];
-    $data{'params'}{'hostids'} = [10084];
+    $data{'params'}{'hostids'} = [@hosts_id];
     $data{'params'}{'groupids'} = [];
 
     $data{'params'}{'timeperiods'}[0]{'timeperiod_type'} = 0;
@@ -142,7 +159,7 @@ sub is_error
 {
     my $content = shift;
 
-    if ($content->{error})
+    if ($content->{'error'})
     {
 	return 1;
     }
@@ -178,8 +195,7 @@ sub colored
 {
     my ($text, $color) = @_;
 
-    my %colors = (
-	          'black'   => 30,
+    my %colors = ('black'   => 30,
                   'red'     => 31,
                   'green'   => 32,
                   'yellow'  => 33,
@@ -197,10 +213,9 @@ sub do_print
 {
     my ($text, $level) = @_;
 
-    my %lev = (
-	       'ERROR'   => 'red',
+    my %lev = ('ERROR'   => 'red',
     	       'SUCCESS' => 'green',
-    	       'INFO'    => 'cyan'
+    	       'INFO'    => 'yellow'
     );
     print colored("$text\n", $lev{$level});
 }
@@ -209,14 +224,12 @@ sub do_print
 sub main
 {
     zabbix_auth();
-    my @hosts_names = ('Zabbix server');
-    create_maintenance(
-	               'test', 
+    my @hosts_names = ('Zabbix server', 'proxy.teh-in.com');
+    create_maintenance('test', 
                        1511308800, 
 		       1511568000, 
-		       'Описание обслуживания', 
+		       'Descriprion', 
 		       0, 
-		       @hosts_names
-    );
+		       @hosts_names);
     zabbix_logout();
 }
